@@ -1,0 +1,134 @@
+# Combined Ingress for both UI and API on patrn.ink
+#
+# Routing strategy:
+# - /api/*, /auth/*, /health, /metrics → API 
+# - Short URL redirects (/:code) → API 
+# - UI routes → UI
+#
+# Since short URLs are random codes and UI has specific routes,
+# we route everything to API first, and API returns 404 for unknown codes.
+# Alternatively, use nginx-ingress rewrite rules.
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: patrn-ingress
+  namespace: patrn-ink
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    # Custom error pages - route 404s to UI
+    nginx.ingress.kubernetes.io/custom-http-errors: "404"
+    nginx.ingress.kubernetes.io/default-backend: patrn-ui
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - patrn.ink
+        - www.patrn.ink
+      secretName: patrn-tls
+  rules:
+    - host: patrn.ink
+      http:
+        paths:
+          # API routes - highest priority
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: patrn-api
+                port:
+                  number: 80
+          - path: /auth
+            pathType: Prefix
+            backend:
+              service:
+                name: patrn-api
+                port:
+                  number: 80
+          - path: /health
+            pathType: Exact
+            backend:
+              service:
+                name: patrn-api
+                port:
+                  number: 80
+          - path: /metrics
+            pathType: Exact
+            backend:
+              service:
+                name: patrn-api
+                port:
+                  number: 80
+          # UI static assets
+          - path: /_next
+            pathType: Prefix
+            backend:
+              service:
+                name: patrn-ui
+                port:
+                  number: 80
+          - path: /static
+            pathType: Prefix
+            backend:
+              service:
+                name: patrn-ui
+                port:
+                  number: 80
+          - path: /favicon.ico
+            pathType: Exact
+            backend:
+              service:
+                name: patrn-ui
+                port:
+                  number: 80
+          # UI pages
+          - path: /login
+            pathType: Prefix
+            backend:
+              service:
+                name: patrn-ui
+                port:
+                  number: 80
+          - path: /dashboard
+            pathType: Prefix
+            backend:
+              service:
+                name: patrn-ui
+                port:
+                  number: 80
+          - path: /settings
+            pathType: Prefix
+            backend:
+              service:
+                name: patrn-ui
+                port:
+                  number: 80
+          # Root path → UI (landing page)
+          - path: /
+            pathType: Exact
+            backend:
+              service:
+                name: patrn-ui
+                port:
+                  number: 80
+          # Everything else (short URLs like /abc123) → API
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: patrn-api
+                port:
+                  number: 80
+    - host: www.patrn.ink
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: patrn-ui
+                port:
+                  number: 80

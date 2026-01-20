@@ -1,0 +1,10 @@
+
+# secrets
+**/*secret*.yaml
+.env
+.env.*
+
+# local tools
+.kube/
+.terraform/
+*.tfstate*

@@ -1,0 +1,21 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: patrn-api-pdb
+  namespace: patrn-ink
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: patrn-api
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: patrn-ui-pdb
+  namespace: patrn-ink
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: patrn-ui
