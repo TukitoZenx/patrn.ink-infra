@@ -1,0 +1,41 @@
+# ClusterIssuer for Let's Encrypt certificates
+# NOTE: When using Cloudflare CDN in "Full" mode, Cloudflare handles
+# public-facing TLS. This issuer generates certificates for the
+# origin server (between Cloudflare and your cluster).
+#
+# For Cloudflare "Full (strict)" mode, you need valid origin certificates.
+
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    # Use Let's Encrypt production server
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: thatikondakedhar09@gmail.com  # Update with your email
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      # HTTP-01 challenge solver using ingress
+      # Use 'traefik' for k3s default, 'nginx' if you disabled traefik
+      - http01:
+          ingress:
+            class: traefik
+---
+# Staging issuer for testing (avoid rate limits)
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: thatikondakedhar09@gmail.com  # Update with your email
+    privateKeySecretRef:
+      name: letsencrypt-staging-account-key
+    solvers:
+      # Use 'traefik' for k3s default, 'nginx' if you disabled traefik
+      - http01:
+          ingress:
+            class: traefik

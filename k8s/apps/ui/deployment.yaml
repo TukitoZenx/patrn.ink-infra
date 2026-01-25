@@ -7,7 +7,8 @@ metadata:
     app: patrn-ui
     component: frontend
 spec:
-  replicas: 2
+  # Reduced for k3s single-node setup
+  replicas: 1
   selector:
     matchLabels:
       app: patrn-ui
@@ -57,6 +58,18 @@ spec:
             runAsNonRoot: true
             runAsUser: 1000
             allowPrivilegeEscalation: false
+            # Note: readOnlyRootFilesystem removed because Next.js
+            # needs to write to .next/cache for image optimization
+          volumeMounts:
+            - name: next-cache
+              mountPath: /app/.next/cache
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: next-cache
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:

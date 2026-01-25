@@ -6,3 +6,4 @@ namespace: patrn-ink
 resources:
   - namespace.yaml
   - secret.yaml
+  - cluster-issuer.yaml

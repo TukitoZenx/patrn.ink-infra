@@ -9,6 +9,6 @@ data:
   BASE_URL: "https://patrn.ink"
   GOOGLE_REDIRECT_URL: "https://patrn.ink/auth/google/callback"
   JWT_EXPIRATION_HOURS: "168"
-  AWS_REGION: "ap-south-1"
+  AWS_REGION: "ap-south-2"
   DYNAMODB_ENDPOINT: ""
   ALLOWED_ORIGINS: "https://patrn.ink,https://www.patrn.ink"

@@ -4,7 +4,9 @@ metadata:
   name: patrn-api-pdb
   namespace: patrn-ink
 spec:
-  minAvailable: 2
+  # Allow at least 1 pod to be unavailable during voluntary disruptions
+  # With HPA minReplicas=1 on k3s, this may block evictions when only 1 pod exists
+  maxUnavailable: 1
   selector:
     matchLabels:
       app: patrn-api
@@ -15,7 +17,8 @@ metadata:
   name: patrn-ui-pdb
   namespace: patrn-ink
 spec:
-  minAvailable: 1
+  # With HPA minReplicas=1 on k3s, allow 1 unavailable
+  maxUnavailable: 1
   selector:
     matchLabels:
       app: patrn-ui

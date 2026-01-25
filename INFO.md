@@ -1,64 +1,161 @@
 # patrn.ink Infra – Overview
 
-This folder contains Kubernetes manifests for deploying the patrn.ink platform. It is organized for Kustomize and targets a single namespace: patrn-ink.
+This folder contains Terraform and Kubernetes manifests for deploying the patrn.ink URL shortener platform using **k3s** (lightweight Kubernetes).
 
-## Top-level layout
+## Architecture
 
-- k8s/ is the root of all manifests.
-- k8s/kustomization.yaml applies everything (base + apps + shared infra).
+```
+                    ┌─────────────────┐
+                    │   Cloudflare    │
+                    │   CDN + DNS     │
+                    │   (patrn.ink)   │
+                    └────────┬────────┘
+                             │ HTTPS
+                    ┌────────▼────────┐
+                    │  EC2 + k3s      │
+                    │  (Traefik)      │
+                    └────────┬────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              │              │              │
+     ┌────────▼───────┐ ┌────▼────┐  ┌──────▼─────┐
+     │  patrn-api     │ │  patrn-ui│  │  Short URL │
+     │  /api, /auth   │ │  /, /dash│  │  /:code    │
+     └────────────────┘ └──────────┘  └────────────┘
+                             │
+                    ┌────────▼────────┐
+                    │  AWS DynamoDB   │
+                    │  + ElastiCache  │
+                    └─────────────────┘
+```
 
-## Base resources (k8s/base/)
+## Folder Structure
 
-- namespace.yaml: Creates the patrn-ink namespace.
-- secret.yaml: Holds app secrets (OAuth, JWT, Redis). Replace placeholders before applying.
-- kustomization.yaml: Bundles base resources.
+- **terraform/**: AWS EC2 + k3s cluster + Cloudflare CDN configuration
+- **k8s/**: Kubernetes manifests organized for Kustomize
 
-## Applications
+## Terraform (terraform/)
 
-### API (k8s/apps/api/)
+### What it creates:
 
-- deployment.yaml: Deploys patrn-api with probes, resource limits, and anti-affinity.
-- service.yaml: ClusterIP service for the API.
-- configmap.yaml: Runtime config (env vars) for the API.
-- hpa.yaml: Autoscaling based on CPU and memory.
-- kustomization.yaml: Bundles API resources and common labels.
+1. **VPC** with public subnets across 2 AZs
+2. **EC2 instances** running k3s (server + optional agents)
+3. **Traefik Ingress Controller** (built into k3s) or nginx-ingress
+4. **cert-manager** for TLS certificates
+5. **Elastic IP** for stable ingress endpoint
+6. **Cloudflare DNS** records pointing to the EIP
+7. **Cloudflare CDN** with www → non-www redirect
 
-### UI (k8s/apps/ui/)
+### Setup:
 
-- deployment.yaml: Deploys patrn-ui with probes, resource limits, and anti-affinity.
-- service.yaml: ClusterIP service for the UI.
-- configmap.yaml: Runtime config (env vars) for the UI.
-- hpa.yaml: Autoscaling based on CPU.
-- kustomization.yaml: Bundles UI resources and common labels.
+```bash
+cd terraform
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your values
+terraform init
+terraform plan
+terraform apply
+```
 
-## Shared infrastructure
+### Required values:
 
-- ingress.yaml: Ingress definition for the public domain.
-    - Configured for NGINX Ingress Controller.
-    - Uses cert-manager (cluster issuer) for TLS.
-    - Routes API paths to patrn-api and UI paths to patrn-ui.
-- pdb.yaml: PodDisruptionBudgets to maintain availability during node drains.
+- `cloudflare_zone_id`: Get from Cloudflare Dashboard → Overview
+- `cloudflare_api_token`: Create at https://dash.cloudflare.com/profile/api-tokens
+  (needs Zone:DNS:Edit, Zone:Zone Settings:Edit permissions)
+- `ssh_public_key`: (Optional) For SSH access to instances
 
-## How traffic flows
+## Kubernetes (k8s/)
 
-- The ingress routes /api, /auth, /health, /metrics to the API service.
-- UI assets and routes (/, /\_next, /static, etc.) go to the UI service.
-- Short URLs are routed to the API.
+### Base resources (k8s/base/)
 
-## What you must customize
+- `namespace.yaml`: Creates the patrn-ink namespace
+- `secret.yaml`: Secrets (OAuth, JWT, Redis) - **replace placeholders!**
+- `cluster-issuer.yaml`: Let's Encrypt ClusterIssuers for TLS
 
-- k8s/base/secret.yaml: Real secrets and credentials.
-- k8s/apps/\*/deployment.yaml: Image names for ECR (or your registry).
-- k8s/ingress.yaml: Domain and cert-manager issuer as needed.
+### Applications
 
-## Apply
+#### API (k8s/apps/api/)
 
-Use Kustomize with kubectl:
+- Go backend handling `/api/*`, `/auth/*`, and short URL redirects (`/:code`)
+- HPA: 3-10 replicas based on CPU/memory
 
-- kubectl apply -k k8s/
+#### UI (k8s/apps/ui/)
 
-Or apply per layer:
+- Next.js frontend for dashboard and landing page
+- HPA: 2-6 replicas based on CPU
 
-- kubectl apply -k k8s/base/
-- kubectl apply -k k8s/apps/api/
-- kubectl apply -k k8s/apps/ui/
+### Shared infrastructure
+
+- `ingress.yaml`: NGINX ingress routing both frontend and backend on same domain
+- `pdb.yaml`: PodDisruptionBudgets for availability during node drains
+
+## Traffic Routing
+
+| Path                       | Service   | Description         |
+| -------------------------- | --------- | ------------------- |
+| `/api/*`                   | patrn-api | API endpoints       |
+| `/auth/*`                  | patrn-api | OAuth callbacks     |
+| `/health`, `/metrics`      | patrn-api | Health checks       |
+| `/` (exact)                | patrn-ui  | Landing page        |
+| `/dashboard/*`, `/login/*` | patrn-ui  | UI routes           |
+| `/_next/*`, `/static/*`    | patrn-ui  | Static assets       |
+| `/:code` (catch-all)       | patrn-api | Short URL redirects |
+
+## Deployment Steps
+
+1. **Deploy infrastructure:**
+
+    ```bash
+    cd terraform
+    terraform init && terraform apply
+    ```
+
+2. **Configure kubectl:**
+
+    ```bash
+    # Option A: SSH (if ssh_public_key was provided)
+    scp ubuntu@<server-ip>:/etc/rancher/k3s/k3s.yaml ./kubeconfig.yaml
+    sed -i 's/127.0.0.1/<server-ip>/g' ./kubeconfig.yaml
+    export KUBECONFIG=./kubeconfig.yaml
+
+    # Option B: AWS SSM Session Manager
+    aws ssm start-session --target <instance-id>
+    sudo cat /etc/rancher/k3s/k3s.yaml
+    ```
+
+3. **Update secrets:**
+   Edit `k8s/base/secret.yaml` with real values
+
+4. **Deploy K8s resources:**
+
+    ```bash
+    kubectl apply -k k8s/
+    ```
+
+5. **Verify:**
+    ```bash
+    kubectl get pods -n patrn-ink
+    kubectl get ingress -n patrn-ink
+    ```
+
+## Cost Estimates (ap-south-2)
+
+| Component         | Monthly Cost   |
+| ----------------- | -------------- |
+| 1x t3.small (k3s) | ~$15           |
+| Elastic IP        | ~$4            |
+| 30GB gp3 EBS      | ~$3            |
+| **Total**         | **~$22/month** |
+
+### Comparison with EKS
+
+| Setup                 | Monthly Cost |
+| --------------------- | ------------ |
+| **k3s (single node)** | **~$22**     |
+| EKS (minimal)         | ~$150-200    |
+
+To scale up:
+
+- Add agent nodes (`agent_count = 1` or more)
+- Use t3.medium for more resources
+- Consider Reserved Instances for long-term savings

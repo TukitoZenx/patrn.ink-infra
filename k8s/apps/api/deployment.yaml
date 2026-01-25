@@ -7,7 +7,8 @@ metadata:
     app: patrn-api
     component: backend
 spec:
-  replicas: 3
+  # Reduced for k3s single-node setup
+  replicas: 1
   selector:
     matchLabels:
       app: patrn-api
@@ -60,6 +61,12 @@ spec:
             runAsUser: 1000
             readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:

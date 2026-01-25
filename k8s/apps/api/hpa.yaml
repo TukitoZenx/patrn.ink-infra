@@ -8,8 +8,9 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: patrn-api
-  minReplicas: 3
-  maxReplicas: 10
+  # Reduced for k3s single-node setup (increase if adding agents)
+  minReplicas: 1
+  maxReplicas: 4
   metrics:
     - type: Resource
       resource:

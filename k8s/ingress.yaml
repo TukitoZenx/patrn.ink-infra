@@ -5,9 +5,14 @@
 # - Short URL redirects (/:code) → API 
 # - UI routes → UI
 #
-# Since short URLs are random codes and UI has specific routes,
-# we route everything to API first, and API returns 404 for unknown codes.
-# Alternatively, use nginx-ingress rewrite rules.
+# NOTE: When using Cloudflare CDN:
+# - Cloudflare handles www → non-www redirect via Page Rules
+# - Cloudflare handles public TLS termination
+# - This ingress handles internal TLS (origin certificate)
+#
+# INGRESS CONTROLLER:
+# - Default: Traefik (built into k3s) - use ingressClassName: traefik
+# - Alternative: nginx-ingress - use ingressClassName: nginx
 
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -15,19 +20,18 @@ metadata:
   name: patrn-ingress
   namespace: patrn-ink
   annotations:
-    kubernetes.io/ingress.class: nginx
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
-    # Custom error pages - route 404s to UI
-    nginx.ingress.kubernetes.io/custom-http-errors: "404"
-    nginx.ingress.kubernetes.io/default-backend: patrn-ui
+    # Traefik annotations (k3s default)
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    # nginx annotations (if using nginx-ingress instead)
+    # nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # nginx.ingress.kubernetes.io/proxy-body-size: "10m"
 spec:
-  ingressClassName: nginx
+  # Use 'traefik' for k3s default, 'nginx' if you disabled traefik
+  ingressClassName: traefik
   tls:
     - hosts:
         - patrn.ink
-        - www.patrn.ink
       secretName: patrn-tls
   rules:
     - host: patrn.ink
@@ -120,15 +124,5 @@ spec:
             backend:
               service:
                 name: patrn-api
-                port:
-                  number: 80
-    - host: www.patrn.ink
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: patrn-ui
                 port:
                   number: 80
