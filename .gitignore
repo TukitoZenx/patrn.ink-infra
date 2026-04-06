@@ -1,10 +1,5 @@
-
-# secrets
-**/*secret*.yaml
 .env
-.env.*
-
-# local tools
-.kube/
-.terraform/
-*.tfstate*
+.env.local
+caddy_data/
+caddy_config/
+redis_data/

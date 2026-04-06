@@ -1,0 +1,79 @@
+services:
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - ui
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+      API_DOMAIN: ${API_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  ui:
+    build:
+      context: ${UI_DIR:-../patrn.ink-ui}
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://${API_DOMAIN}
+        NEXT_PUBLIC_APP_URL: https://${DOMAIN}
+    restart: unless-stopped
+    expose:
+      - "3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+
+  api:
+    build:
+      context: ${API_DIR:-../patrn.ink-api}
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - redis
+    expose:
+      - "8080"
+    environment:
+      PORT: 8080
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      BASE_URL: https://${DOMAIN}
+      FRONTEND_URL: https://${DOMAIN}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GOOGLE_REDIRECT_URL: https://${API_DOMAIN}/auth/google/callback
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GITHUB_REDIRECT_URL: https://${API_DOMAIN}/auth/github/callback
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION_HOURS: ${JWT_EXPIRATION_HOURS:-168}
+      DEFAULT_RATE_LIMIT: ${DEFAULT_RATE_LIMIT:-60}
+      API_TOKEN_RATE_LIMIT: ${API_TOKEN_RATE_LIMIT:-100}
+      RATE_LIMIT_REQUESTS: ${RATE_LIMIT_REQUESTS:-100}
+      RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
+      DYNAMODB_ENDPOINT: ${DYNAMODB_ENDPOINT:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION}
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ""
+      ALLOWED_ORIGINS: https://${DOMAIN},https://${API_DOMAIN}
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    expose:
+      - "6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+
+volumes:
+  caddy_data:
+  caddy_config:
+  redis_data:

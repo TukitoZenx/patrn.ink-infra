@@ -1,0 +1,44 @@
+{$DOMAIN} {
+	encode zstd gzip
+
+	route {
+		@ui_exact {
+			path /
+			path /dashboard
+			path /dashboard/*
+			path /auth/callback
+			path /_next/*
+			path /favicon.ico
+			path /file.svg
+			path /globe.svg
+			path /next.svg
+			path /patrn.ink-transparent_512.png
+			path /vercel.svg
+			path /window.svg
+		}
+		handle @ui_exact {
+			reverse_proxy ui:3000
+		}
+
+		@api_routes {
+			path /brand/*
+		}
+		handle @api_routes {
+			reverse_proxy api:8080
+		}
+
+		@short_links path_regexp short_links ^/[A-Za-z0-9_-]{1,20}(?:/(?:verify|verify-age|qr|preview))?/?$
+		handle @short_links {
+			reverse_proxy api:8080
+		}
+
+		handle {
+			reverse_proxy ui:3000
+		}
+	}
+}
+
+{$API_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy api:8080
+}

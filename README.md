@@ -1,57 +1,129 @@
-# patrn.ink Infrastructure
+# patrn.ink VM Deployment
 
-Kubernetes infrastructure for patrn.ink platform using **k3s** (lightweight Kubernetes).
+This folder now contains the only infra needed for the prototype: one VM, one Docker Compose stack, one reverse proxy, the UI, the API, and Redis on the same machine.
 
-## Structure
+## What This Deploys
 
+- `proxy`: Caddy with automatic HTTPS
+- `ui`: Next.js frontend
+- `api`: Go backend
+- `redis`: local Redis on the VM
+- `dynamodb`: external AWS DynamoDB table(s), not self-hosted
+
+The stack is designed for a single Ubuntu VM on Google Cloud, keeps the product on `patrn.ink`, and exposes the API on `api.patrn.ink`.
+
+## Routing
+
+- `/`, `/dashboard`, `/auth/callback`, `/_next/*`, and UI assets on `patrn.ink` -> frontend
+- `/brand/*` on `patrn.ink` -> backend
+- `/:code`, `/:code/verify`, `/:code/verify-age`, `/:code/qr`, `/:code/preview` -> backend
+- `api.patrn.ink/*` -> backend
+
+This keeps short links on the main domain while moving API traffic and OAuth entrypoints to `api.patrn.ink`.
+
+## Expected Repo Layout
+
+By default this compose file expects:
+
+```text
+parent-folder/
+  patrn.ink-api/
+  patrn.ink-ui/
+  patrn.ink-infra/
 ```
-k8s/
-├── base/           # Shared resources (namespace, secrets)
-├── apps/
-│   ├── api/        # API (patrn.ink-api)
-│   └── ui/         # UI (patrn.ink)
-└── kustomization.yaml
 
-terraform/
-├── main.tf         # EC2 + k3s + Cloudflare
-├── scripts/        # k3s installation scripts
-└── terraform.tfvars.example
-```
+If your folders are elsewhere, set `UI_DIR` and `API_DIR` in `.env`.
 
-## Quick Deploy
+## 1. Prepare DNS
+
+Point both domains to the VM public IP.
+
+Example:
+
+- `patrn.ink` -> `YOUR_VM_IP`
+- `api.patrn.ink` -> `YOUR_VM_IP`
+
+If you also want `www`, point that record too, then update Caddy as needed.
+
+## 2. OAuth Setup
+
+Use these redirect URIs in Google and GitHub:
+
+- `https://YOUR_API_DOMAIN/auth/google/callback`
+- `https://YOUR_API_DOMAIN/auth/github/callback`
+
+The UI callback page remains:
+
+- `https://YOUR_DOMAIN/auth/callback`
+
+## 3. Configure Environment
 
 ```bash
-# 1. Deploy infrastructure (EC2 + k3s)
-cd terraform
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars with your values
-terraform init && terraform apply
-
-# 2. Get kubeconfig from k3s server
-scp ubuntu@<server-ip>:/etc/rancher/k3s/k3s.yaml ./kubeconfig.yaml
-sed -i 's/127.0.0.1/<server-ip>/g' ./kubeconfig.yaml
-export KUBECONFIG=./kubeconfig.yaml
-
-# 3. Apply K8s resources
-kubectl apply -k k8s/
+cd patrn.ink-infra
+cp .env.example .env
 ```
 
-## Configuration
+Set at least:
 
-1. Update `k8s/base/secret.yaml` with credentials
-2. Update image references in deployment files
-3. Configure your domain in ingress
+- `DOMAIN`
+- `API_DOMAIN`
+- `AWS_REGION`
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`
+- `JWT_SECRET`
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
 
-## Images
+For DynamoDB on AWS, leave `DYNAMODB_ENDPOINT` blank.
 
-| Service | Image                            |
-| ------- | -------------------------------- |
-| API     | `your-registry/patrn-api:latest` |
-| UI      | `your-registry/patrn-ui:latest`  |
+## 4. Prepare the VM
 
-## Cost Comparison
+Run on a fresh Ubuntu VM:
 
-| Setup             | Monthly Cost |
-| ----------------- | ------------ |
-| k3s (single node) | ~$22         |
-| EKS (minimal)     | ~$150-200    |
+```bash
+chmod +x scripts/setup-vm.sh scripts/deploy.sh
+./scripts/setup-vm.sh
+```
+
+Then log out and back in once if Docker group membership was added.
+
+## 5. Deploy
+
+```bash
+./scripts/deploy.sh
+```
+
+## 6. Verify
+
+Check the running services:
+
+```bash
+docker compose ps
+```
+
+Check backend health:
+
+```bash
+curl https://YOUR_API_DOMAIN/health
+```
+
+Open:
+
+- `https://YOUR_DOMAIN`
+- `https://YOUR_DOMAIN/dashboard`
+- `https://YOUR_API_DOMAIN/swagger/index.html`
+
+## Notes
+
+- Redis is local to the VM in this setup. It is not exposed publicly.
+- This is intentionally simple and prototype-friendly.
+- If you later want Redis Cloud instead, remove the `redis` service and set `REDIS_ADDR`/`REDIS_PASSWORD` in the compose file.
+- Caddy automatically provisions TLS once DNS is pointing to the VM.
+
+## Updates
+
+Redeploy after code changes:
+
+```bash
+./scripts/deploy.sh
+```
